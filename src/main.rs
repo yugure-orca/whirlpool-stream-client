@@ -104,13 +104,15 @@ impl WhirlpoolStreamWebsocketClient {
 
     // 新しいクライアントを作成
     pub async fn connect(
-        endpoint: String,
-        apikey: String,
+        endpoint: &str,
+        apikey: &str,
         slot: Option<u64>,
         limit: Option<u32>,
         event: EventParam,
         account: AccountParam,
     ) -> Result<Self, Box<dyn Error>> {
+        let endpoint = endpoint.to_string();
+        let apikey = apikey.to_string();
         let url = Self::build_url(&endpoint, &apikey, slot, limit, &event, &account)?;
 
         //let url = Url::parse(url)?;
@@ -284,8 +286,8 @@ impl WhirlpoolStreamWebsocketClient {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let mut client = WhirlpoolStreamWebsocketClient::connect(
-        "wss://orcanauts-a.whirlpool-stream.pleiades.dev".to_string(),
-        "demo".to_string(),
+        "wss://orcanauts-a.whirlpool-stream.pleiades.dev",
+        "demo",
         None,
         Some(500000),
         EventParam::Trade,
