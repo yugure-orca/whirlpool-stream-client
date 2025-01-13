@@ -18,27 +18,43 @@ pub enum AccountParam {
     All,
 }
 
-// EventParamの拡張
-impl EventParam {
-    fn as_query_param(&self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::Trade => "trade",
-            Self::Liquidity => "liquidity",
-            Self::All => "all",
-        }
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum WhirlpoolStreamConnectError {
+    #[error("Invalid URL")]
+    InvalidUrl,
+    #[error("Invalid parameters")]
+    InvalidParameters,
+    #[error("Connection failed")]
+    ConnectFailed,
+    #[error("Invalid first message")]
+    InvalidFirstMessage,
+    #[error("Other error: {0}")]
+    Other(Box<dyn Error>),
 }
 
-// AccountParamの拡張
-impl AccountParam {
-    fn as_query_param(&self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::Trade => "trade",
-            Self::All => "all",
-        }
-    }
+#[derive(Debug)]
+pub enum WhirlpoolStreamMessage {
+    Heartbeat,
+    Data { slot: u64, block_height: u64, block_time: i64, events: Vec<serde_json::Value>, accounts: Vec<serde_json::Value> },
+    Closed { reason: String },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum WhirlpoolStreamError {
+    #[error("Connection timeout")]
+    Timeout,
+    #[error("Received invalid message type")]
+    InvalidMessageType,
+    #[error("Invalid message format: {0}")]
+    InvalidMessageFormat(String),
+    #[error("Unexpected message")]
+    UnexpectedMessage,
+    #[error("Inconsistent message")]
+    InconsistentMessage,
+    #[error("Non-continuous block height")]
+    NonContinuousBlockHeight,
+    #[error("Other error: {0}")]
+    Other(Box<dyn Error>),
 }
 
 #[derive(Debug, serde_derive::Deserialize)]
@@ -80,69 +96,12 @@ struct DataAccount {
     accounts: Vec<serde_json::Value>,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum WhirlpoolStreamConnectError {
-    #[error("Invalid URL")]
-    InvalidUrl,
-    #[error("Invalid parameters")]
-    InvalidParameters,
-    #[error("Connection failed")]
-    ConnectFailed,
-    #[error("Invalid first message")]
-    InvalidFirstMessage,
-    #[error("Other error: {0}")]
-    Other(Box<dyn Error>),
-}
-
-#[derive(Debug)]
-pub enum WhirlpoolStreamMessage {
-    Heartbeat,
-    Data { slot: u64, block_height: u64, block_time: i64, events: Vec<serde_json::Value>, accounts: Vec<serde_json::Value> },
-    Closed { reason: String },
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum WhirlpoolStreamError {
-    #[error("Connection timeout")]
-    Timeout,
-    #[error("Received invalid message type")]
-    InvalidMessageType,
-    #[error("Invalid message format: {0}")]
-    InvalidMessageFormat(String),
-    #[error("Unexpected message")]
-    UnexpectedMessage,
-    #[error("Inconsistent message")]
-    InconsistentMessage,
-    #[error("Other error: {0}")]
-    Other(Box<dyn Error>),
-}
-
-// Message
-// 正常系
-// - Heartbeat
-// - Data
-// 異常系
-// - Closed
-// - Error
-// - Timeout
-
-
-
-
-
-// WebSocketクライアントをラップする構造体
 pub struct WhirlpoolStreamWebsocketClient {
-    event: EventParam,
-    account: AccountParam,
-
-    // state
-    last_received_point: Option<(u64, u64, i64)>, // (slot, block_height, block_time)
-    last_received_system_time: Option<i64>,
-    received_count: u64,
-
-    is_closed: bool,
-
-    // stream
+    // parameters
+    receive_event: bool,
+    receive_account: bool,
+    // stream state
+    last_received_block_height: Option<u64>,
     reader: futures_util::stream::SplitStream<
         tokio_tungstenite::WebSocketStream<
             tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>
@@ -159,18 +118,17 @@ impl WhirlpoolStreamWebsocketClient {
         event: EventParam,
         account: AccountParam,
     ) -> Result<Self, WhirlpoolStreamConnectError> {
-        let endpoint = endpoint.to_string();
-        let apikey = apikey.to_string();
+        let receive_event = !matches!(event, EventParam::None);
+        let receive_account = !matches!(account, AccountParam::None);
+        if !receive_event && !receive_account {
+            return Err(WhirlpoolStreamConnectError::InvalidParameters);
+        }
 
         let mut url = url::Url::parse(&format!(
             "{}/{}/stream/refined/ws",
             endpoint.trim_end_matches('/'),
             apikey,
         )).map_err(|_| WhirlpoolStreamConnectError::InvalidUrl)?;
-
-        if matches!(event, EventParam::None) && matches!(account, AccountParam::None) {
-            return Err(WhirlpoolStreamConnectError::InvalidParameters);
-        }
 
         let mut query_params = url.query_pairs_mut();
         if let Some(slot) = slot {
@@ -179,29 +137,34 @@ impl WhirlpoolStreamWebsocketClient {
         if let Some(limit) = limit {
             query_params.append_pair("limit", &limit.to_string());
         }
-        query_params.append_pair("event", event.as_query_param());
-        query_params.append_pair("account", account.as_query_param());
+        query_params.append_pair("event", match event {
+            EventParam::None => "none",
+            EventParam::Trade => "trade",
+            EventParam::Liquidity => "liquidity",
+            EventParam::All => "all",
+        });
+        query_params.append_pair("account", match account {
+            AccountParam::None => "none",
+            AccountParam::Trade => "trade",
+            AccountParam::All => "all",
+        });
         drop(query_params);
 
         let (ws_stream, _) = connect_async(url.as_str()).await.map_err(|_| WhirlpoolStreamConnectError::ConnectFailed)?;
         let (_, reader) = ws_stream.split();
         
-        let mut client = Self { event, account, reader, last_received_point: None, last_received_system_time: None, received_count: 0, is_closed: false };
+        let mut client = Self { receive_event, receive_account, last_received_block_height: None, reader };
 
         match client.read().await {
-            None => return Err(WhirlpoolStreamConnectError::InvalidFirstMessage),
-            Some(Err(e)) => return Err(WhirlpoolStreamConnectError::Other(e.into())),
-            Some(Ok(StreamMessage::Opened)) => { /* nop */ },
-            Some(Ok(_)) => return Err(WhirlpoolStreamConnectError::InvalidFirstMessage),
+            Some(Ok(StreamMessage::Opened)) => Ok(client),
+            Some(Ok(_)) => Err(WhirlpoolStreamConnectError::InvalidFirstMessage),
+            Some(Err(e)) => Err(WhirlpoolStreamConnectError::Other(e.into())),
+            None => Err(WhirlpoolStreamConnectError::InvalidFirstMessage),
         }
-
-        Ok(client)
     }
 
-    // 次のメッセージを取得
     pub async fn next(&mut self) -> Option<Result<WhirlpoolStreamMessage, WhirlpoolStreamError>> {
-        let receive_event = !matches!(self.event, EventParam::None);
-        let event = if receive_event {
+        let event = if self.receive_event {
             let message = match self.read().await {
                 None => return None,
                 Some(Err(e)) => return Some(Err(e)),
@@ -218,8 +181,7 @@ impl WhirlpoolStreamWebsocketClient {
             None
         };
 
-        let receive_account = !matches!(self.account, AccountParam::None);
-        let account = if receive_account {
+        let account = if self.receive_account {
             let message = match self.read().await {
                 None => return None,
                 Some(Err(e)) => return Some(Err(e)),
@@ -244,10 +206,6 @@ impl WhirlpoolStreamWebsocketClient {
             None
         };
 
-        //self.last_received_point = Some((slot, block_height, block_time));
-        //self.last_received_system_time = Some(block_time);
-        //self.received_count += 1;
-
         let (slot, block_height, block_time, events, accounts) = match (event, account) {
             (Some(event), Some(account)) => {
                 if event.slot != account.slot || event.block_height != account.block_height || event.block_time != account.block_time {
@@ -259,6 +217,13 @@ impl WhirlpoolStreamWebsocketClient {
             (None, Some(account)) => (account.slot, account.block_height, account.block_time, vec![], account.accounts),
             (None, None) => unreachable!(),
         };
+
+        if let Some(last_received_block_height) = self.last_received_block_height {
+            if last_received_block_height + 1 != block_height {
+                return Some(Err(WhirlpoolStreamError::NonContinuousBlockHeight));
+            }
+        }
+        self.last_received_block_height = Some(block_height);
                 
         Some(Ok(WhirlpoolStreamMessage::Data {
             slot,
@@ -296,7 +261,6 @@ impl WhirlpoolStreamWebsocketClient {
             }
         }
     }
-
 }
 
 // 使用例
@@ -308,13 +272,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None,
         Some(50),
         EventParam::All,
-        AccountParam::All,
+        AccountParam::None,
     ).await?;
     
     while let Some(message) = client.next().await {
         match message {
-            Ok(text) => println!("受信: {:?}...", text),
-            Err(e) => eprintln!("エラー: {}", e),
+            Ok(WhirlpoolStreamMessage::Data { slot, block_height, block_time, events, accounts }) => println!("Data: slot:{}, height:{}, time:{}, events:{}, accounts:{}", slot, block_height, block_time, events.len(), accounts.len()),
+            Ok(WhirlpoolStreamMessage::Heartbeat) => println!("Heartbeat"),
+            Ok(WhirlpoolStreamMessage::Closed { reason }) => println!("Closed: {}", reason),
+            Err(e) => eprintln!("ERROR: {}", e),
         }
     }
 
