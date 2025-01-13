@@ -22,3 +22,4 @@ serde_json = { version = "1.0.107", features = ["preserve_order"] }
 # Whirlpool
 whirlpool-archived-data = { git = "https://github.com/yugure-orca/whirlpool-archived-data", tag = "v0.3.0" }
 url = "2.5.4"
+thiserror = "2.0.11"

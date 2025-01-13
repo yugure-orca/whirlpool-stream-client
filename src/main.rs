@@ -3,7 +3,7 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use std::error::Error;
 use tokio::time::{timeout, Duration};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum EventParam {
     None,
     Trade,
@@ -11,7 +11,7 @@ pub enum EventParam {
     All,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum AccountParam {
     None,
     Trade,
@@ -20,7 +20,7 @@ pub enum AccountParam {
 
 #[derive(Debug, serde_derive::Deserialize)]
 #[serde(tag = "ctrl")]
-enum WebsocketMessage {
+enum StreamMessage {
     #[serde(rename = "opened")]
     Opened,
     #[serde(rename = "closed")]
@@ -64,6 +64,22 @@ pub enum WhirlpoolStreamMessage {
     Closed { reason: String },
 }
 
+#[derive(Debug, thiserror::Error)]
+enum WhirlpoolStreamError {
+    #[error("Connection timeout")]
+    Timeout,
+    #[error("Received invalid message type")]
+    InvalidMessageType,
+    #[error("Invalid message format: {0}")]
+    InvalidMessageFormat(String),
+    #[error("Unexpected message")]
+    UnexpectedMessage,
+    #[error("Inconsistent message")]
+    InconsistentMessage,
+    #[error("Other error: {0}")]
+    Other(Box<dyn Error>),
+}
+
 // Message
 // 正常系
 // - Heartbeat
@@ -92,6 +108,8 @@ pub struct WhirlpoolStreamWebsocketClient {
     last_received_system_time: Option<i64>,
     received_count: u64,
 
+    is_closed: bool,
+
     // stream
     reader: futures_util::stream::SplitStream<
         tokio_tungstenite::WebSocketStream<
@@ -113,16 +131,14 @@ impl WhirlpoolStreamWebsocketClient {
     ) -> Result<Self, Box<dyn Error>> {
         let endpoint = endpoint.to_string();
         let apikey = apikey.to_string();
-        let url = Self::build_url(&endpoint, &apikey, slot, limit, &event, &account)?;
+        let url = Self::build_url(&endpoint, &apikey, slot, limit, event, account)?;
 
-        //let url = Url::parse(url)?;
-        println!("built URL: {}", url);
         let (ws_stream, _) = connect_async(url.as_str()).await?;
         let (_, reader) = ws_stream.split();
         
-        let mut client = Self { endpoint, apikey, slot, limit, event, account, reader, last_received_point: None, last_received_system_time: None, received_count: 0 };
+        let mut client = Self { endpoint, apikey, slot, limit, event, account, reader, last_received_point: None, last_received_system_time: None, received_count: 0, is_closed: false };
 
-        let first_message = client.read_message().await
+        let first_message = client.read().await
             .ok_or_else(|| "最初のメッセージの読み取りに失敗しました".to_string())??;
         println!("first message: {:?}", first_message);
 
@@ -130,18 +146,18 @@ impl WhirlpoolStreamWebsocketClient {
     }
 
     fn build_url(
-        endpoint: &String,
-        apikey: &String,
+        endpoint: &str,
+        apikey: &str,
         slot: Option<u64>,
         limit: Option<u32>,
-        event: &EventParam,
-        account: &AccountParam
+        event: EventParam,
+        account: AccountParam
     ) -> Result<String, Box<dyn Error>> {
-        let mut url = url::Url::parse(format!(
+        let mut url = url::Url::parse(&format!(
             "{}/{}/stream/refined/ws",
-            endpoint.to_string().trim_end_matches('/'),
+            endpoint.trim_end_matches('/'),
             apikey,
-        ).as_str())?;
+        ))?;
 
         let mut query_params = url.query_pairs_mut();
 
@@ -153,76 +169,62 @@ impl WhirlpoolStreamWebsocketClient {
             query_params.append_pair("limit", &limit.to_string());
         }
 
-        match event {
-            EventParam::None => {},
-            EventParam::Trade => { query_params.append_pair("event", "trade"); },
-            EventParam::Liquidity => { query_params.append_pair("event", "liquidity"); },
-            EventParam::All => { query_params.append_pair("event", "all"); },
+        if let Some(param) = event.as_query_param() {
+            query_params.append_pair("event", param);
         }
 
-        match account {
-            AccountParam::None => {},
-            AccountParam::Trade => { query_params.append_pair("account", "trade"); },
-            AccountParam::All => { query_params.append_pair("account", "all"); },
+        if let Some(param) = account.as_query_param() {
+            query_params.append_pair("account", param);
         }
 
         drop(query_params);
-
         Ok(url.to_string())
     }
 
     // 次のメッセージを取得
-    pub async fn next(&mut self) -> Option<Result<WhirlpoolStreamMessage, Box<dyn Error>>> {
+    pub async fn next(&mut self) -> Option<Result<WhirlpoolStreamMessage, WhirlpoolStreamError>> {
         let receive_event = !matches!(self.event, EventParam::None);
-        let receive_account = !matches!(self.account, AccountParam::None);
-
-        let mut event = None;
-        if receive_event {
-            let message = self.read_message().await;
-            if message.is_none() {
-                return None;
-            }
-            let message = message.unwrap();
-            if let Err(e) = message {
-                return Some(Err(e));
-            }
-            let message = message.unwrap();
-
+        let event = if receive_event {
+            let message = match self.read().await {
+                None => return None,
+                Some(Err(e)) => return Some(Err(e)),
+                Some(Ok(msg)) => msg,
+            };
             match message {
-                WebsocketMessage::Nodata => { return Some(Ok(WhirlpoolStreamMessage::Heartbeat)); }
-                WebsocketMessage::Closed { reason } => { return Some(Ok(WhirlpoolStreamMessage::Closed { reason })); }
-                WebsocketMessage::Opened => { return Some(Err("not expected Opened".into())); }
-                WebsocketMessage::DataAccount { data } => { return Some(Err("not expected DataAccount".into())); }
-                WebsocketMessage::DataEvent { data } => { event = Some(data); }
+                StreamMessage::Nodata => return Some(Ok(WhirlpoolStreamMessage::Heartbeat)),
+                StreamMessage::Closed { reason } => return Some(Ok(WhirlpoolStreamMessage::Closed { reason })),
+                StreamMessage::Opened => return Some(Err(WhirlpoolStreamError::UnexpectedMessage)),
+                StreamMessage::DataAccount { .. } => return Some(Err(WhirlpoolStreamError::UnexpectedMessage)),
+                StreamMessage::DataEvent { data } => Some(data),
             }
+        } else {
+            None
         };
 
-        // error check
-
-        let mut account = None;
-        if receive_account {
-            let message = self.read_message().await;
-            if message.is_none() {
-                return None;
-            }
-            let message = message.unwrap();
-            if let Err(e) = message {
-                return Some(Err(e));
-            }
-            let message = message.unwrap();
-
+        let receive_account = !matches!(self.account, AccountParam::None);
+        let account = if receive_account {
+            let message = match self.read().await {
+                None => return None,
+                Some(Err(e)) => return Some(Err(e)),
+                Some(Ok(msg)) => msg,
+            };
             match message {
-                WebsocketMessage::Nodata => {
-                    if event.is_some() {
-                        return Some(Err("not expected Nodata".into()));
-                    }
-                    return Some(Ok(WhirlpoolStreamMessage::Heartbeat));
-                }
-                WebsocketMessage::Closed { reason } => { return Some(Ok(WhirlpoolStreamMessage::Closed { reason })); }
-                WebsocketMessage::Opened => { return Some(Err("not expected Opened".into())); }
-                WebsocketMessage::DataEvent { data } => { return Some(Err("not expected DataEvent".into())); }
-                WebsocketMessage::DataAccount { data } => { account = Some(data); }
+                StreamMessage::Nodata => return Some(if event.is_some() {
+                    Err(WhirlpoolStreamError::UnexpectedMessage)
+                } else {
+                    Ok(WhirlpoolStreamMessage::Heartbeat)
+                }),
+                StreamMessage::Closed { reason } => return Some(if event.is_some() {
+                    Err(WhirlpoolStreamError::UnexpectedMessage)
+                } else {
+                    Ok(WhirlpoolStreamMessage::Closed { reason })
+                }),
+                StreamMessage::Opened => return Some(Err(WhirlpoolStreamError::UnexpectedMessage)),
+                StreamMessage::DataEvent { .. } => return Some(Err(WhirlpoolStreamError::UnexpectedMessage)),
+                StreamMessage::DataAccount { data } => Some(data),
             }
+        } else {
+            None
         };
 
         //self.last_received_point = Some((slot, block_height, block_time));
@@ -231,9 +233,9 @@ impl WhirlpoolStreamWebsocketClient {
 
         let (slot, block_height, block_time, events, accounts) = match (event, account) {
             (Some(event), Some(account)) => {
-                assert_eq!(event.slot, account.slot);
-                assert_eq!(event.block_height, account.block_height);
-                assert_eq!(event.block_time, account.block_time);
+                if event.slot != account.slot || event.block_height != account.block_height || event.block_time != account.block_time {
+                    return Some(Err(WhirlpoolStreamError::InconsistentMessage));
+                }
                 (event.slot, event.block_height, event.block_time, event.events, account.accounts)
             }
             (Some(event), None) => (event.slot, event.block_height, event.block_time, event.events, vec![]),
@@ -250,36 +252,57 @@ impl WhirlpoolStreamWebsocketClient {
         }))
     }
 
-    async fn read_message(&mut self) -> Option<Result<WebsocketMessage, Box<dyn Error>>> {
-        let timeout_duration = Duration::from_secs(10);
+    async fn read(&mut self) -> Option<Result<StreamMessage, WhirlpoolStreamError>> {
+        const TIMEOUT: Duration = Duration::from_secs(10);
 
-        let message = timeout(timeout_duration, self.reader.next()).await;
+        let message = timeout(TIMEOUT, self.reader.next()).await;
         match message {
-            Err(elapsed) => Some(Err(Box::new(elapsed))),
+            Err(_) => Some(Err(WhirlpoolStreamError::Timeout)),
             Ok(message) => {
                 match message {
-                    // 閉じる
+                    // already closed
                     None => None,
-                    // エラー
-                    Some(Err(e)) => Some(Err(Box::new(e))),
-                    // Websocketのコネクションが切断されたので終了
+                    // closed on Websocket layer
                     Some(Ok(Message::Close(_))) => None,
-                    // テキストメッセージを受信
+                    // text message
                     Some(Ok(Message::Text(text))) => {
-                        // JSONテキストをRawMessageにパースする
                         match serde_json::from_str(&text) {
-                            Ok(raw_message) => Some(Ok(raw_message)),
-                            Err(e) => Some(Err(Box::new(e))),
+                            Ok(message) => Some(Ok(message)),
+                            Err(_) => Some(Err(WhirlpoolStreamError::InvalidMessageFormat(text.to_string()))),
                         }
                     },
-                    // 非テキストメッセージを受信
-                    Some(Ok(_)) => Some(Err("非テキストメッセージを受信".into())),
+                    // not text message
+                    Some(Ok(_)) => Some(Err(WhirlpoolStreamError::InvalidMessageType)),
+                    // error
+                    Some(Err(e)) => Some(Err(WhirlpoolStreamError::Other(Box::new(e)))),
                 }    
             }
         }
     }
 
-    // TODO: close
+}
+
+// EventParamの拡張
+impl EventParam {
+    fn as_query_param(&self) -> Option<&'static str> {
+        match self {
+            Self::None => None,
+            Self::Trade => Some("trade"),
+            Self::Liquidity => Some("liquidity"),
+            Self::All => Some("all"),
+        }
+    }
+}
+
+// AccountParamの拡張
+impl AccountParam {
+    fn as_query_param(&self) -> Option<&'static str> {
+        match self {
+            Self::None => None,
+            Self::Trade => Some("trade"),
+            Self::All => Some("all"),
+        }
+    }
 }
 
 // 使用例
@@ -304,3 +327,4 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
+
