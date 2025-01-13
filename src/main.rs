@@ -18,6 +18,29 @@ pub enum AccountParam {
     All,
 }
 
+// EventParamの拡張
+impl EventParam {
+    fn as_query_param(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Trade => "trade",
+            Self::Liquidity => "liquidity",
+            Self::All => "all",
+        }
+    }
+}
+
+// AccountParamの拡張
+impl AccountParam {
+    fn as_query_param(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Trade => "trade",
+            Self::All => "all",
+        }
+    }
+}
+
 #[derive(Debug, serde_derive::Deserialize)]
 #[serde(tag = "ctrl")]
 enum StreamMessage {
@@ -57,6 +80,20 @@ struct DataAccount {
     accounts: Vec<serde_json::Value>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum WhirlpoolStreamConnectError {
+    #[error("Invalid URL")]
+    InvalidUrl,
+    #[error("Invalid parameters")]
+    InvalidParameters,
+    #[error("Connection failed")]
+    ConnectFailed,
+    #[error("Invalid first message")]
+    InvalidFirstMessage,
+    #[error("Other error: {0}")]
+    Other(Box<dyn Error>),
+}
+
 #[derive(Debug)]
 pub enum WhirlpoolStreamMessage {
     Heartbeat,
@@ -65,7 +102,7 @@ pub enum WhirlpoolStreamMessage {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum WhirlpoolStreamError {
+pub enum WhirlpoolStreamError {
     #[error("Connection timeout")]
     Timeout,
     #[error("Received invalid message type")]
@@ -114,8 +151,6 @@ pub struct WhirlpoolStreamWebsocketClient {
 }
 
 impl WhirlpoolStreamWebsocketClient {
-
-    // 新しいクライアントを作成
     pub async fn connect(
         endpoint: &str,
         apikey: &str,
@@ -123,7 +158,7 @@ impl WhirlpoolStreamWebsocketClient {
         limit: Option<u32>,
         event: EventParam,
         account: AccountParam,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, WhirlpoolStreamConnectError> {
         let endpoint = endpoint.to_string();
         let apikey = apikey.to_string();
 
@@ -131,7 +166,11 @@ impl WhirlpoolStreamWebsocketClient {
             "{}/{}/stream/refined/ws",
             endpoint.trim_end_matches('/'),
             apikey,
-        ))?;
+        )).map_err(|_| WhirlpoolStreamConnectError::InvalidUrl)?;
+
+        if matches!(event, EventParam::None) && matches!(account, AccountParam::None) {
+            return Err(WhirlpoolStreamConnectError::InvalidParameters);
+        }
 
         let mut query_params = url.query_pairs_mut();
         if let Some(slot) = slot {
@@ -144,14 +183,17 @@ impl WhirlpoolStreamWebsocketClient {
         query_params.append_pair("account", account.as_query_param());
         drop(query_params);
 
-        let (ws_stream, _) = connect_async(url.as_str()).await?;
+        let (ws_stream, _) = connect_async(url.as_str()).await.map_err(|_| WhirlpoolStreamConnectError::ConnectFailed)?;
         let (_, reader) = ws_stream.split();
         
         let mut client = Self { event, account, reader, last_received_point: None, last_received_system_time: None, received_count: 0, is_closed: false };
 
-        let first_message = client.read().await
-            .ok_or_else(|| "最初のメッセージの読み取りに失敗しました".to_string())??;
-        println!("first message: {:?}", first_message);
+        match client.read().await {
+            None => return Err(WhirlpoolStreamConnectError::InvalidFirstMessage),
+            Some(Err(e)) => return Err(WhirlpoolStreamConnectError::Other(e.into())),
+            Some(Ok(StreamMessage::Opened)) => { /* nop */ },
+            Some(Ok(_)) => return Err(WhirlpoolStreamConnectError::InvalidFirstMessage),
+        }
 
         Ok(client)
     }
@@ -257,29 +299,6 @@ impl WhirlpoolStreamWebsocketClient {
 
 }
 
-// EventParamの拡張
-impl EventParam {
-    fn as_query_param(&self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::Trade => "trade",
-            Self::Liquidity => "liquidity",
-            Self::All => "all",
-        }
-    }
-}
-
-// AccountParamの拡張
-impl AccountParam {
-    fn as_query_param(&self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::Trade => "trade",
-            Self::All => "all",
-        }
-    }
-}
-
 // 使用例
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -287,12 +306,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "wss://orcanauts-a.whirlpool-stream.pleiades.dev",
         "demo",
         None,
-        Some(500000),
-        EventParam::Trade,
+        Some(50),
+        EventParam::All,
         AccountParam::All,
     ).await?;
     
-    // シンプルな受信ループ
     while let Some(message) = client.next().await {
         match message {
             Ok(text) => println!("受信: {:?}...", text),
