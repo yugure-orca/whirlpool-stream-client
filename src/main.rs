@@ -95,11 +95,6 @@ enum WhirlpoolStreamError {
 
 // WebSocketクライアントをラップする構造体
 pub struct WhirlpoolStreamWebsocketClient {
-    // parameters
-    endpoint: String,
-    apikey: String,
-    slot: Option<u64>,
-    limit: Option<u32>,
     event: EventParam,
     account: AccountParam,
 
@@ -131,28 +126,7 @@ impl WhirlpoolStreamWebsocketClient {
     ) -> Result<Self, Box<dyn Error>> {
         let endpoint = endpoint.to_string();
         let apikey = apikey.to_string();
-        let url = Self::build_url(&endpoint, &apikey, slot, limit, event, account)?;
 
-        let (ws_stream, _) = connect_async(url.as_str()).await?;
-        let (_, reader) = ws_stream.split();
-        
-        let mut client = Self { endpoint, apikey, slot, limit, event, account, reader, last_received_point: None, last_received_system_time: None, received_count: 0, is_closed: false };
-
-        let first_message = client.read().await
-            .ok_or_else(|| "最初のメッセージの読み取りに失敗しました".to_string())??;
-        println!("first message: {:?}", first_message);
-
-        Ok(client)
-    }
-
-    fn build_url(
-        endpoint: &str,
-        apikey: &str,
-        slot: Option<u64>,
-        limit: Option<u32>,
-        event: EventParam,
-        account: AccountParam
-    ) -> Result<String, Box<dyn Error>> {
         let mut url = url::Url::parse(&format!(
             "{}/{}/stream/refined/ws",
             endpoint.trim_end_matches('/'),
@@ -160,25 +134,26 @@ impl WhirlpoolStreamWebsocketClient {
         ))?;
 
         let mut query_params = url.query_pairs_mut();
-
         if let Some(slot) = slot {
             query_params.append_pair("slot", &slot.to_string());
         }
-
         if let Some(limit) = limit {
             query_params.append_pair("limit", &limit.to_string());
         }
-
-        if let Some(param) = event.as_query_param() {
-            query_params.append_pair("event", param);
-        }
-
-        if let Some(param) = account.as_query_param() {
-            query_params.append_pair("account", param);
-        }
-
+        query_params.append_pair("event", event.as_query_param());
+        query_params.append_pair("account", account.as_query_param());
         drop(query_params);
-        Ok(url.to_string())
+
+        let (ws_stream, _) = connect_async(url.as_str()).await?;
+        let (_, reader) = ws_stream.split();
+        
+        let mut client = Self { event, account, reader, last_received_point: None, last_received_system_time: None, received_count: 0, is_closed: false };
+
+        let first_message = client.read().await
+            .ok_or_else(|| "最初のメッセージの読み取りに失敗しました".to_string())??;
+        println!("first message: {:?}", first_message);
+
+        Ok(client)
     }
 
     // 次のメッセージを取得
@@ -284,23 +259,23 @@ impl WhirlpoolStreamWebsocketClient {
 
 // EventParamの拡張
 impl EventParam {
-    fn as_query_param(&self) -> Option<&'static str> {
+    fn as_query_param(&self) -> &'static str {
         match self {
-            Self::None => None,
-            Self::Trade => Some("trade"),
-            Self::Liquidity => Some("liquidity"),
-            Self::All => Some("all"),
+            Self::None => "none",
+            Self::Trade => "trade",
+            Self::Liquidity => "liquidity",
+            Self::All => "all",
         }
     }
 }
 
 // AccountParamの拡張
 impl AccountParam {
-    fn as_query_param(&self) -> Option<&'static str> {
+    fn as_query_param(&self) -> &'static str {
         match self {
-            Self::None => None,
-            Self::Trade => Some("trade"),
-            Self::All => Some("all"),
+            Self::None => "none",
+            Self::Trade => "trade",
+            Self::All => "all",
         }
     }
 }
