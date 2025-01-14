@@ -6,6 +6,7 @@ members = [
   # examples
   "examples/rust/check-stream",
   "examples/rust/monitor-all-trade",
+  "examples/rust/with-reconnect",
 ]
 
 resolver = "2"
