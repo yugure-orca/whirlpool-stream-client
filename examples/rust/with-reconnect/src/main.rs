@@ -1,4 +1,3 @@
-use std::error::Error;
 use whirlpool_stream_websocket_client::{WhirlpoolStreamWebsocketClient, WhirlpoolStreamMessage, EventParam, AccountParam};
 
 async fn run_client_with_retry(endpoints: [&str; 2], apikey: &str, slot: Option<u64>, limit: Option<u32>, event_param: EventParam, account_param: AccountParam) {
@@ -10,7 +9,6 @@ async fn run_client_with_retry(endpoints: [&str; 2], apikey: &str, slot: Option<
         endpoint_index = (endpoint_index + 1) % endpoints.len();
 
         println!("Connecting to endpoint: {} slot: {:?}", endpoint, start_slot);
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
         if let Ok(mut client) = WhirlpoolStreamWebsocketClient::connect(endpoint, apikey, start_slot, limit, event_param, account_param).await {
             while let Some(message) = client.next().await {
@@ -46,6 +44,7 @@ async fn run_client_with_retry(endpoints: [&str; 2], apikey: &str, slot: Option<
         }
         
         // reconnect wait
+        println!("Reconnect wait...");
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
     }
 }

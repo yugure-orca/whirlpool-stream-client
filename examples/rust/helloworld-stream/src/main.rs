@@ -7,7 +7,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "wss://orcanauts-a.whirlpool-stream.pleiades.dev",
         "demo",
         None,
-        Some(500000), // This setting does not affect the stream being disconnected once a day. Client must implement reconnection logic.
+        Some(50), // This setting does not affect the stream being disconnected once a day. Client must implement reconnection logic.
         EventParam::All,
         AccountParam::All,
     ).await?;
