@@ -270,14 +270,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "wss://orcanauts-a.whirlpool-stream.pleiades.dev",
         "demo",
         None,
-        Some(50),
+        Some(500000),
         EventParam::All,
-        AccountParam::None,
+        AccountParam::All,
     ).await?;
     
     while let Some(message) = client.next().await {
         match message {
-            Ok(WhirlpoolStreamMessage::Data { slot, block_height, block_time, events, accounts }) => println!("Data: slot:{}, height:{}, time:{}, events:{}, accounts:{}", slot, block_height, block_time, events.len(), accounts.len()),
+            Ok(WhirlpoolStreamMessage::Data { slot, block_height, block_time, events, accounts }) => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64;
+                let time_diff = now - block_time;
+                
+                println!(
+                    "Data: slot:{}, height:{}, time:{} ({}s ago), events:{}, accounts:{}", 
+                    slot, 
+                    block_height, 
+                    block_time, 
+                    time_diff,
+                    events.len(), 
+                    accounts.len()
+                );
+            },
             Ok(WhirlpoolStreamMessage::Heartbeat) => println!("Heartbeat"),
             Ok(WhirlpoolStreamMessage::Closed { reason }) => println!("Closed: {}", reason),
             Err(e) => eprintln!("ERROR: {}", e),
