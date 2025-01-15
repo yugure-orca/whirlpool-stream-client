@@ -1,5 +1,5 @@
 [package]
-name = "helloworld-stream"
+name = "monitor-trade"
 version.workspace = true
 edition.workspace = true
 

@@ -5,7 +5,10 @@ members = [
   "clients/rust/websocket-client",
   # examples
   "examples/rust/helloworld-stream",
-  "examples/rust/monitor-all-trade",
+  "examples/rust/monitor-trade",
+  "examples/rust/monitor-liquidity",
+  "examples/rust/monitor-new-pool",
+  "examples/rust/monitor-sol-price",
   "examples/rust/with-reconnect",
 ]
 

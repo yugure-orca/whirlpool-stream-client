@@ -6,6 +6,9 @@ use tokio::time::{timeout, Duration};
 use whirlpool_stream_data_schema::account_delta::{BlockWhirlpoolAccountDelta, WhirlpoolAccountDelta};
 use whirlpool_stream_data_schema::event::{BlockWhirlpoolEvent, TransactionWhirlpoolEvent};
 
+pub use whirlpool_stream_data_schema::account_delta;
+pub use whirlpool_stream_data_schema::event;
+
 #[derive(Debug, Clone, Copy)]
 pub enum EventParam {
     None,

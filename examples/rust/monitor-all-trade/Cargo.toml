@@ -1,6 +1,0 @@
-[package]
-name = "monitor-all-trade"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]

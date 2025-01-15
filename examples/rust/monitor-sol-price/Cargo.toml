@@ -1,5 +1,5 @@
 [package]
-name = "helloworld-stream"
+name = "monitor-sol-price"
 version.workspace = true
 edition.workspace = true
 

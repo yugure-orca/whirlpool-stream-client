@@ -1,5 +1,5 @@
 [package]
-name = "helloworld-stream"
+name = "monitor-liquidity"
 version.workspace = true
 edition.workspace = true
 
