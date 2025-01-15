@@ -1,0 +1,24 @@
+[package]
+name = "whirlpool-stream-websocket-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Local
+whirlpool-stream-data-schema = { workspace = true }
+
+# Utils
+thiserror = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+futures-util = { workspace = true }
+
+# Websocket
+url = { workspace = true }
+tokio-tungstenite = { workspace = true }
+
+# Serde
+serde = { workspace = true }
+serde_derive = { workspace = true }
+serde_json = { workspace = true }

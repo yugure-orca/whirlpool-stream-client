@@ -1,0 +1,16 @@
+[package]
+name = "whirlpool-stream-data-schema"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Serde
+serde = { workspace = true }
+serde_derive = { workspace = true }
+serde_json = { workspace = true }
+
+# Base64
+base64 = { workspace = true }
+
+# Big Decimal
+bigdecimal = { workspace = true }

@@ -1,0 +1,11 @@
+[package]
+name = "with-reconnect"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+whirlpool-stream-data-schema = { workspace = true }
+whirlpool-stream-websocket-client = { workspace = true }
+
+# Async
+tokio = { workspace = true }

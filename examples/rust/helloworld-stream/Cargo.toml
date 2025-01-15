@@ -1,0 +1,10 @@
+[package]
+name = "helloworld-stream"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+whirlpool-stream-websocket-client = { workspace = true }
+
+# Async
+tokio = { workspace = true }

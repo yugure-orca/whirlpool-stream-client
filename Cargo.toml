@@ -1,0 +1,46 @@
+[workspace]
+members = [
+  # client implementations
+  "clients/rust/data-schema",
+  "clients/rust/websocket-client",
+  # examples
+  "examples/rust/helloworld-stream",
+  "examples/rust/monitor-trade",
+  "examples/rust/monitor-liquidity",
+  "examples/rust/monitor-new-pool",
+  "examples/rust/monitor-sol-price",
+  "examples/rust/with-reconnect",
+]
+
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+# Local
+whirlpool-stream-data-schema = { path = "clients/rust/data-schema" }
+whirlpool-stream-websocket-client = { path = "clients/rust/websocket-client" }
+
+# Utils
+thiserror = "2.0.11"
+
+# Async
+tokio = { version = "1.14.1", features = ["full"] }
+futures-util = "0.3.30"
+
+# Websocket
+url = "2.5.4"
+tokio-tungstenite = { version = "0.26.1", features = ["native-tls"] }
+
+# Serde
+serde = "1.0.188"
+serde_derive = "1.0.188"
+serde_json = { version = "1.0.107", features = ["preserve_order"] }
+
+# Base64
+base64 = "0.21.4"
+
+# Big Decimal
+bigdecimal = "0.4.5"
