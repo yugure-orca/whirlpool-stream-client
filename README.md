@@ -1,7 +1,19 @@
-# whirlpool-stream-client
+# Whirlpool Stream Client
 Whirlpool Stream Client library is a client library for [Whirlpool Stream](https://github.com/yugure-orca/whirlpool-stream-doc).
 
-## Rust
+# Rust
+## Cargo.toml
+```toml
+[dependencies]
+whirlpool-stream-websocket-client = { git = "https://github.com/yugure-orca/whirlpool-stream-client", package = "whirlpool-stream-websocket-client" }
+```
+
+If you want to use the specific version, you can use the following (example: v0.1.0):
+```toml
+[dependencies]
+whirlpool-stream-websocket-client = { git = "https://github.com/yugure-orca/whirlpool-stream-client", tag = "v0.1.0", package = "whirlpool-stream-websocket-client" }
+```
+
 ## Examples
 ### helloworld-stream
 The simplest example to connect to the Whirlpool Stream and print received messages.
