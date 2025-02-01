@@ -9,6 +9,7 @@ members = [
   "examples/rust/monitor-liquidity",
   "examples/rust/monitor-new-pool",
   "examples/rust/monitor-sol-price",
+  "examples/rust/monitor-pool",
   "examples/rust/with-reconnect",
 ]
 

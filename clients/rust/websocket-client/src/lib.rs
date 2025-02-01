@@ -1,9 +1,11 @@
 use futures_util::StreamExt;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use std::error::Error;
 use tokio::time::{timeout, Duration};
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
-use whirlpool_stream_data_schema::account_delta::{BlockWhirlpoolAccountDelta, WhirlpoolAccountDelta};
+use whirlpool_stream_data_schema::account_delta::{
+    BlockWhirlpoolAccountDelta, WhirlpoolAccountDelta,
+};
 use whirlpool_stream_data_schema::event::{BlockWhirlpoolEvent, TransactionWhirlpoolEvent};
 
 pub use whirlpool_stream_data_schema::account_delta;
@@ -41,8 +43,16 @@ pub enum WhirlpoolStreamConnectError {
 #[derive(Debug)]
 pub enum WhirlpoolStreamMessage {
     Heartbeat,
-    Data { slot: u64, block_height: u64, block_time: i64, events: Vec<TransactionWhirlpoolEvent>, accounts: Vec<WhirlpoolAccountDelta> },
-    Closed { reason: String },
+    Data {
+        slot: u64,
+        block_height: u64,
+        block_time: i64,
+        events: Vec<TransactionWhirlpoolEvent>,
+        accounts: Vec<WhirlpoolAccountDelta>,
+    },
+    Closed {
+        reason: String,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -95,8 +105,8 @@ pub struct WhirlpoolStreamWebsocketClient {
     last_received_block_height: Option<u64>,
     reader: futures_util::stream::SplitStream<
         tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>
-        >
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
     >,
 }
 
@@ -119,7 +129,8 @@ impl WhirlpoolStreamWebsocketClient {
             "{}/{}/stream/refined/ws",
             endpoint.trim_end_matches('/'),
             apikey,
-        )).map_err(|_| WhirlpoolStreamConnectError::InvalidUrl)?;
+        ))
+        .map_err(|_| WhirlpoolStreamConnectError::InvalidUrl)?;
 
         let mut query_params = url.query_pairs_mut();
         if let Some(slot) = slot {
@@ -128,23 +139,37 @@ impl WhirlpoolStreamWebsocketClient {
         if let Some(limit) = limit {
             query_params.append_pair("limit", &limit.to_string());
         }
-        query_params.append_pair("event", match event {
-            EventParam::None => "none",
-            EventParam::Trade => "trade",
-            EventParam::Liquidity => "liquidity",
-            EventParam::All => "all",
-        });
-        query_params.append_pair("account", match account {
-            AccountParam::None => "none",
-            AccountParam::Trade => "trade",
-            AccountParam::All => "all",
-        });
+        query_params.append_pair(
+            "event",
+            match event {
+                EventParam::None => "none",
+                EventParam::Trade => "trade",
+                EventParam::Liquidity => "liquidity",
+                EventParam::All => "all",
+            },
+        );
+        query_params.append_pair(
+            "account",
+            match account {
+                AccountParam::None => "none",
+                AccountParam::Trade => "trade",
+                AccountParam::All => "all",
+            },
+        );
         drop(query_params);
 
-        let (ws_stream, _) = connect_async(url.as_str()).await.map_err(|_| WhirlpoolStreamConnectError::ConnectFailed)?;
+        let (ws_stream, _) = connect_async(url.as_str())
+            .await
+            .map_err(|_| WhirlpoolStreamConnectError::ConnectFailed)?;
         let (_, reader) = ws_stream.split();
-        
-        let mut client = Self { receive_event, receive_account, state: ClientState::Normal, last_received_block_height: None, reader };
+
+        let mut client = Self {
+            receive_event,
+            receive_account,
+            state: ClientState::Normal,
+            last_received_block_height: None,
+            reader,
+        };
 
         match client.read().await {
             Some(Ok(StreamMessage::Opened)) => Ok(client),
@@ -163,7 +188,7 @@ impl WhirlpoolStreamWebsocketClient {
         match &result {
             None => self.state = ClientState::Closed,
             Some(Err(_)) => self.state = ClientState::Error,
-            Some(Ok(_)) => {},
+            Some(Ok(_)) => {}
         }
 
         result
@@ -178,9 +203,13 @@ impl WhirlpoolStreamWebsocketClient {
             };
             match message {
                 StreamMessage::Nodata => return Some(Ok(WhirlpoolStreamMessage::Heartbeat)),
-                StreamMessage::Closed { reason } => return Some(Ok(WhirlpoolStreamMessage::Closed { reason })),
+                StreamMessage::Closed { reason } => {
+                    return Some(Ok(WhirlpoolStreamMessage::Closed { reason }))
+                }
                 StreamMessage::Opened => return Some(Err(WhirlpoolStreamError::UnexpectedMessage)),
-                StreamMessage::DataAccount { .. } => return Some(Err(WhirlpoolStreamError::UnexpectedMessage)),
+                StreamMessage::DataAccount { .. } => {
+                    return Some(Err(WhirlpoolStreamError::UnexpectedMessage))
+                }
                 StreamMessage::DataEvent { data } => Some(data),
             }
         } else {
@@ -194,18 +223,24 @@ impl WhirlpoolStreamWebsocketClient {
                 Some(Ok(msg)) => msg,
             };
             match message {
-                StreamMessage::Nodata => return Some(if event.is_some() {
-                    Err(WhirlpoolStreamError::UnexpectedMessage)
-                } else {
-                    Ok(WhirlpoolStreamMessage::Heartbeat)
-                }),
-                StreamMessage::Closed { reason } => return Some(if event.is_some() {
-                    Err(WhirlpoolStreamError::UnexpectedMessage)
-                } else {
-                    Ok(WhirlpoolStreamMessage::Closed { reason })
-                }),
+                StreamMessage::Nodata => {
+                    return Some(if event.is_some() {
+                        Err(WhirlpoolStreamError::UnexpectedMessage)
+                    } else {
+                        Ok(WhirlpoolStreamMessage::Heartbeat)
+                    })
+                }
+                StreamMessage::Closed { reason } => {
+                    return Some(if event.is_some() {
+                        Err(WhirlpoolStreamError::UnexpectedMessage)
+                    } else {
+                        Ok(WhirlpoolStreamMessage::Closed { reason })
+                    })
+                }
                 StreamMessage::Opened => return Some(Err(WhirlpoolStreamError::UnexpectedMessage)),
-                StreamMessage::DataEvent { .. } => return Some(Err(WhirlpoolStreamError::UnexpectedMessage)),
+                StreamMessage::DataEvent { .. } => {
+                    return Some(Err(WhirlpoolStreamError::UnexpectedMessage))
+                }
                 StreamMessage::DataAccount { data } => Some(data),
             }
         } else {
@@ -214,13 +249,34 @@ impl WhirlpoolStreamWebsocketClient {
 
         let (slot, block_height, block_time, events, accounts) = match (event, account) {
             (Some(event), Some(account)) => {
-                if event.slot != account.slot || event.block_height != account.block_height || event.block_time != account.block_time {
+                if event.slot != account.slot
+                    || event.block_height != account.block_height
+                    || event.block_time != account.block_time
+                {
                     return Some(Err(WhirlpoolStreamError::InconsistentMessage));
                 }
-                (event.slot, event.block_height, event.block_time, event.transactions, account.account_deltas)
+                (
+                    event.slot,
+                    event.block_height,
+                    event.block_time,
+                    event.transactions,
+                    account.account_deltas,
+                )
             }
-            (Some(event), None) => (event.slot, event.block_height, event.block_time, event.transactions, vec![]),
-            (None, Some(account)) => (account.slot, account.block_height, account.block_time, vec![], account.account_deltas),
+            (Some(event), None) => (
+                event.slot,
+                event.block_height,
+                event.block_time,
+                event.transactions,
+                vec![],
+            ),
+            (None, Some(account)) => (
+                account.slot,
+                account.block_height,
+                account.block_time,
+                vec![],
+                account.account_deltas,
+            ),
             (None, None) => unreachable!(),
         };
 
@@ -230,7 +286,7 @@ impl WhirlpoolStreamWebsocketClient {
             }
         }
         self.last_received_block_height = Some(block_height);
-                
+
         Some(Ok(WhirlpoolStreamMessage::Data {
             slot,
             block_height,
@@ -253,17 +309,17 @@ impl WhirlpoolStreamWebsocketClient {
                     // closed on Websocket layer
                     Some(Ok(Message::Close(_))) => None,
                     // text message
-                    Some(Ok(Message::Text(text))) => {
-                        match serde_json::from_str(&text) {
-                            Ok(message) => Some(Ok(message)),
-                            Err(_) => Some(Err(WhirlpoolStreamError::InvalidMessageFormat(text.to_string()))),
-                        }
+                    Some(Ok(Message::Text(text))) => match serde_json::from_str(&text) {
+                        Ok(message) => Some(Ok(message)),
+                        Err(_) => Some(Err(WhirlpoolStreamError::InvalidMessageFormat(
+                            text.to_string(),
+                        ))),
                     },
                     // not text message
                     Some(Ok(_)) => Some(Err(WhirlpoolStreamError::InvalidMessageType)),
                     // error
                     Some(Err(e)) => Some(Err(WhirlpoolStreamError::Other(Box::new(e)))),
-                }    
+                }
             }
         }
     }
