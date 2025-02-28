@@ -85,7 +85,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                         EVENT_ICON_SELL
                                     };
                                     println!(
-                                        "\t{} Traded pool: {}, direction: {:?}, in: {}{}, out: {}{}, price: {} -> {}, payer: {}",
+                                        "\t{} {:<44} Traded direction: {:?}, in: {}{}, out: {}{}, price: {} -> {}, payer: {}",
                                         buy_or_sell,
                                         payload.whirlpool,
                                         payload.trade_direction,
@@ -102,7 +102,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             WhirlpoolEvent::LiquidityDeposited(payload) => {
                                 if match_pool(&payload.whirlpool, &args.pools) {
                                     println!(
-                                        "\t{} Deposited pool: {}, range: [{}, {}], liquidity: {}, a: {}{}, b: {}{}, payer: {}",
+                                        "\t{} {:<44}  Deposited range: [{}, {}], liquidity: {}, a: {}{}, b: {}{}, payer: {}",
                                         EVENT_ICON_DEPOSIT,
                                         payload.whirlpool,
                                         payload.lower_tick_index,
@@ -119,7 +119,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             WhirlpoolEvent::LiquidityWithdrawn(payload) => {
                                 if match_pool(&payload.whirlpool, &args.pools) {
                                     println!(
-                                        "\t{} Withdrawn pool: {}, range: [{}, {}], liquidity: {}, a: {}{}, b: {}{}, payer: {}",
+                                        "\t{} {:<44}  Withdrawn range: [{}, {}], liquidity: {}, a: {}{}, b: {}{}, payer: {}",
                                         EVENT_ICON_WITHDRAW,
                                         payload.whirlpool,
                                         payload.lower_tick_index,
@@ -136,7 +136,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             WhirlpoolEvent::PoolInitialized(payload) => {
                                 if match_pool(&payload.whirlpool, &args.pools) {
                                     println!(
-                                        "\t{} Initialized pool: {}, conffig: {}, a: {}{}, b: {}{}, ts: {}, price: {}, payer: {}",
+                                        "\t{} {:<44}  Initialized conffig: {}, a: {}{}, b: {}{}, ts: {}, price: {}, payer: {}",
                                         EVENT_ICON_INITIALIZED,
                                         payload.whirlpool,
                                         payload.config,
