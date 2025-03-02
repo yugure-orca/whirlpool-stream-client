@@ -113,4 +113,6 @@ pub enum WhirlpoolAccountType {
     PositionBundle,
     #[serde(rename = "TB")]
     TokenBadge,
+    #[serde(rename = "LC")]
+    LockConfig,
 }
