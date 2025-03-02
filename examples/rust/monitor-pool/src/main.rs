@@ -164,15 +164,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn match_pool(pool: &String, pools: &Vec<String>) -> bool {
+fn match_pool(pool: &String, pools: &[String]) -> bool {
     if pools.is_empty() {
         return true;
     }
     pools.contains(pool)
 }
 
-fn get_token_icon(mint: &String) -> &str {
-    match mint.as_str() {
+fn get_token_icon(mint: &str) -> &str {
+    match mint {
         "So11111111111111111111111111111111111111112" => TOKEN_ICON_SOL, // SOL
         "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So" => TOKEN_ICON_XSOL, // mSOL
         "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn" => TOKEN_ICON_XSOL, // jitoSOL
