@@ -99,8 +99,12 @@ pub enum WhirlpoolEvent {
     PositionOpened(PositionOpenedEventPayload),
     #[serde(rename = "PC")]
     PositionClosed(PositionClosedEventPayload),
+    #[serde(rename = "PRR")]
+    PositionRangeReset(PositionRangeResetEventPayload),
     #[serde(rename = "PL")]
     PositionLocked(PositionLockedEventPayload),
+    #[serde(rename = "PLT")]
+    PositionLockedTransferred(PositionLockedTransferredEventPayload),
 
     // Position Bundle
     #[serde(rename = "PBI")]
