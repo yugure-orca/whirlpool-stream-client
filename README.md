@@ -8,10 +8,10 @@ Whirlpool Stream Client library is a client library for [Whirlpool Stream](https
 whirlpool-stream-websocket-client = { git = "https://github.com/yugure-orca/whirlpool-stream-client", package = "whirlpool-stream-websocket-client" }
 ```
 
-If you want to use the specific version, you can use the following (example: v0.1.0):
+If you want to use the specific version, you can use the following (example: v0.1.1):
 ```toml
 [dependencies]
-whirlpool-stream-websocket-client = { git = "https://github.com/yugure-orca/whirlpool-stream-client", tag = "v0.1.0", package = "whirlpool-stream-websocket-client" }
+whirlpool-stream-websocket-client = { git = "https://github.com/yugure-orca/whirlpool-stream-client", tag = "v0.1.1", package = "whirlpool-stream-websocket-client" }
 ```
 
 ## Examples
